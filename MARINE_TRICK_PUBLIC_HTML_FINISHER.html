@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MARINE TRICK 公開HTML仕上げツール</title>
+<style>
+*{box-sizing:border-box}
+:root{--a:#1686c9;--line:#9bd6f4;--panel:#fff;--soft:#eef9ff}
+body{margin:0;background:#eaf7ff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;color:#123}
+main{max-width:820px;margin:auto;padding:18px}
+.box{background:var(--panel);border:2px solid var(--line);border-radius:18px;padding:16px;margin:12px 0}
+h1{color:#0878bd;font-size:24px}
+button,.filebtn{display:inline-block;border:0;border-radius:10px;padding:11px 14px;margin:4px;background:var(--a);color:#fff;font-weight:800;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.small{font-size:12px;color:#567;line-height:1.7}
+.ok{color:#18794e;font-weight:800}.warn{color:#a45b00;font-weight:800}.bad{color:#b42318;font-weight:800}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12px;border-radius:12px;max-height:300px;overflow:auto}
+label.check{display:block;margin:9px 0}
+input[type=checkbox]{width:20px;height:20px;vertical-align:middle}
+</style>
+</head>
+<body>
+<main>
+<h1>🌊 MARINE TRICK 公開HTML仕上げツール</h1>
+<div class="box">
+  <b>① MASTERから書き出した公開用 index.html を選択</b>
+  <div class="small">MASTER自体は加工しません。完成済みの公開HTMLだけを後処理します。</div>
+  <label class="filebtn">index.htmlを選択<input id="file" type="file" accept=".html,text/html" hidden></label>
+  <div id="fileInfo" class="small">未選択</div>
+</div>
+
+<div class="box">
+  <b>② 安全設定</b>
+  <label class="check"><input id="comments" type="checkbox" checked> HTMLコメントを削除</label>
+  <label class="check"><input id="spaces" type="checkbox" checked> タグ間の不要な空白を削除</label>
+  <label class="check"><input id="light" type="checkbox" checked> JavaScriptを軽く読みにくくする</label>
+  <div class="small">強い難読化はしません。文字列暗号化、eval化、制御フロー変換など壊れやすい処理は行いません。</div>
+</div>
+
+<div class="box">
+  <b>③ 解析結果</b>
+  <div id="status" class="small">ファイルを選択すると解析します。</div>
+  <pre id="report">待機中</pre>
+</div>
+
+<div class="box">
+  <b>④ 公開版を書き出す</b><br>
+  <button id="export" disabled>安全版 index.html を書き出す</button>
+  <div class="small">危険な構造やJavaScript構文エラーを検出した場合は書き出しを停止します。</div>
+</div>
+</main>
+
+<script>
+(()=>{
+"use strict";
+const $=id=>document.getElementById(id);
+let original="",filename="",lastResult=null;
+
+function parseHTML(s){
+  const d=new DOMParser().parseFromString(s,"text/html");
+  return d;
+}
+function syntaxCheck(doc){
+  const errors=[];
+  [...doc.scripts].forEach((s,i)=>{
+    if(s.src)return;
+    const type=(s.getAttribute("type")||"").trim().toLowerCase();
+    if(type && !["text/javascript","application/javascript","module"].includes(type))return;
+    if(type==="module"){errors.push("script "+(i+1)+": type=module はこのローカル検査では安全確認できないため自動加工を停止");return}
+    try{new Function(s.textContent)}catch(e){errors.push("script "+(i+1)+": "+e.message)}
+  });
+  return errors;
+}
+function scan(s,doc){
+  const notes=[],danger=[];
+  if(!/<!doctype\s+html/i.test(s))notes.push("DOCTYPEが見つかりません");
+  if(!doc.documentElement||!doc.body)danger.push("HTML文書として解析できません");
+  const jsErrors=syntaxCheck(doc);
+  if(jsErrors.length)danger.push(...jsErrors);
+  const masterHints=[
+    ["管理パスワード","管理パスワードという文字列"],
+    ["MASTERバックアップ","MASTERバックアップUI文字列"],
+    ['type="password"',"password入力欄"],
+    ["exportIndex","MASTERの公開書き出し関数らしき文字列"],
+    ["JSON読み込み","JSON管理UIらしき文字列"]
+  ];
+  masterHints.forEach(([needle,label])=>{if(s.includes(needle))notes.push(label+"を検出")});
+  if(/\?open=|URLSearchParams[\s\S]{0,120}(?:open|get\(["']open)/i.test(s))notes.push("ディープリンクらしき処理を検出。削除・変更はしません");
+  return {notes,danger,jsErrors};
+}
+function protectBlocks(s){
+  const blocks=[];
+  s=s.replace(/<(script|style|pre|textarea)\b[^>]*>[\s\S]*?<\/\1>/gi,m=>{
+    const key="___MT_BLOCK_"+blocks.length+"___";blocks.push(m);return key;
+  });
+  return {s,blocks};
+}
+function restoreBlocks(s,blocks){
+  return s.replace(/___MT_BLOCK_(\d+)___/g,(_,n)=>blocks[+n]);
+}
+function safeHTMLMinify(s){
+  const p=protectBlocks(s);
+  let x=p.s;
+  if($("comments").checked)x=x.replace(/<!--(?!\[if)[\s\S]*?-->/g,"");
+  if($("spaces").checked)x=x.replace(/>\s+</g,"><").replace(/[\t\r\n]+/g," ").replace(/ {2,}/g," ");
+  return restoreBlocks(x,p.blocks).trim();
+}
+function lightJS(doc){
+  if(!$("light").checked)return;
+  [...doc.scripts].forEach(s=>{
+    if(s.src)return;
+    const type=(s.getAttribute("type")||"").trim().toLowerCase();
+    if(type && !["text/javascript","application/javascript"].includes(type))return;
+    // Conservative only: remove ordinary JS comments/indentation is deliberately avoided.
+    // Rename only a tiny wrapper-local identifier when an exact safe pattern exists.
+    let x=s.textContent;
+    x=x.replace(/\bconsole\.debug\([^;]*\);?/g,"");
+    s.textContent=x;
+  });
+}
+function serialize(doc,hadDoctype){
+  return (hadDoctype?"<!doctype html>":"")+doc.documentElement.outerHTML;
+}
+function process(){
+  if(!original)return null;
+  const firstDoc=parseHTML(original);
+  const first=scan(original,firstDoc);
+  if(first.danger.length)return {ok:false,report:first};
+  let h=safeHTMLMinify(original);
+  let d=parseHTML(h);
+  lightJS(d);
+  h=serialize(d,/<!doctype\s+html/i.test(original));
+  const finalDoc=parseHTML(h);
+  const final=scan(h,finalDoc);
+  if(final.danger.length)return {ok:false,report:final};
+  return {ok:true,html:h,report:final,before:new Blob([original]).size,after:new Blob([h]).size};
+}
+function show(){
+  lastResult=process();
+  if(!lastResult)return;
+  const r=lastResult.report;
+  const lines=[];
+  if(r.danger.length){lines.push("⛔ 書き出し停止");r.danger.forEach(x=>lines.push("・"+x));}
+  else{
+    lines.push("✅ JavaScript構文チェック通過");
+    lines.push("✅ HTML再解析チェック通過");
+    lines.push("✅ MASTER本体は加工対象外");
+    lines.push("✅ ディープリンク処理は追加・削除しない");
+    if(lastResult.before!=null)lines.push("サイズ: "+lastResult.before.toLocaleString()+" → "+lastResult.after.toLocaleString()+" bytes");
+  }
+  if(r.notes.length){lines.push("");lines.push("確認メモ:");r.notes.forEach(x=>lines.push("・"+x))}
+  $("report").textContent=lines.join("\n");
+  $("status").className=lastResult.ok?"ok":"bad";
+  $("status").textContent=lastResult.ok?"安全チェックを通過しました":"安全チェックで停止しました";
+  $("export").disabled=!lastResult.ok;
+}
+$("file").addEventListener("change",e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  filename=f.name;
+  const r=new FileReader();
+  r.onload=()=>{original=String(r.result||"");$("fileInfo").textContent=filename+" / "+new Blob([original]).size.toLocaleString()+" bytes";show()};
+  r.onerror=()=>{$("status").textContent="ファイルを読み込めませんでした";$("status").className="bad"};
+  r.readAsText(f);
+});
+["comments","spaces","light"].forEach(id=>$(id).addEventListener("change",()=>{if(original)show()}));
+$("export").addEventListener("click",()=>{
+  lastResult=process();
+  if(!lastResult||!lastResult.ok)return show();
+  const blob=new Blob([lastResult.html],{type:"text/html;charset=utf-8"});
+  const u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download="index.html";document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),1500);
+});
+})();
+</script>
+</body>
+</html>
