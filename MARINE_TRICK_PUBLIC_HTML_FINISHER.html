@@ -245,7 +245,8 @@ async function show(){
     }else{
       lines.push("ℹ️ GA4: 追加OFF");
     }
-    if(lastResult.imageCompression){const z=lastResult.imageCompression;if($("compressImages").checked)lines.push("✅ 埋め込み画像圧縮: "+z.count+"件"+(z.failed?" / 失敗 "+z.failed+"件":""));}\n    if(lastResult.before!=null)lines.push("サイズ: "+lastResult.before.toLocaleString()+" → "+lastResult.after.toLocaleString()+" bytes");
+    if(lastResult.imageCompression){const z=lastResult.imageCompression;if($("compressImages").checked)lines.push("✅ 埋め込み画像圧縮: "+z.count+"件"+(z.failed?" / 失敗 "+z.failed+"件":""));}
+    if(lastResult.before!=null)lines.push("サイズ: "+lastResult.before.toLocaleString()+" → "+lastResult.after.toLocaleString()+" bytes");
   }
   if(r.notes.length){lines.push("");lines.push("確認メモ:");r.notes.forEach(x=>lines.push("・"+x))}
   $("report").textContent=lines.join("\n");
