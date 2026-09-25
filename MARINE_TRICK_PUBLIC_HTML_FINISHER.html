@@ -18,6 +18,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12px;border-radius:12px;max-height:300px;overflow:auto}
 label.check{display:block;margin:9px 0}
 input[type=checkbox]{width:20px;height:20px;vertical-align:middle}select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff;margin:6px 0}
+.dropzone{margin-top:12px;border:3px dashed #79c8ef;border-radius:16px;padding:24px 14px;text-align:center;background:#f4fbff;color:#176b98;font-weight:800;transition:.15s}
+.dropzone.dragover{background:#dff4ff;border-color:#1686c9;transform:scale(1.01)}
+.dropzone .small{font-weight:400;margin-top:5px}
 </style>
 </head>
 <body>
@@ -26,7 +29,10 @@ input[type=checkbox]{width:20px;height:20px;vertical-align:middle}select{width:1
 <div class="box">
   <b>① MASTERから書き出した公開用 index.html を選択</b>
   <div class="small">MASTER自体は加工しません。完成済みの公開HTMLだけを後処理します。HTML内に埋め込まれた画像も必要に応じて圧縮します。</div>
-  <label class="filebtn">index.htmlを選択<input id="file" type="file" accept=".html,text/html" hidden></label>
+  <label class="filebtn">index.htmlを選択<input id="file" type="file" accept=".html,text/html,.htm" hidden></label>
+  <div id="dropzone" class="dropzone">ここに index.html をドラッグ＆ドロップ
+    <div class="small">Dropbox / エクスプローラーからそのままドロップできます</div>
+  </div>
   <div id="fileInfo" class="small">未選択</div>
 </div>
 
@@ -247,14 +253,41 @@ async function show(){
   $("status").textContent=lastResult.ok?"安全チェックを通過しました":"安全チェックで停止しました";
   $("export").disabled=!lastResult.ok;
 }
-$("file").addEventListener("change",e=>{
-  const f=e.target.files&&e.target.files[0];if(!f)return;
-  filename=f.name;
+function loadHTMLFile(f){
+  if(!f)return;
+  const name=(f.name||"").toLowerCase();
+  if(!(name.endsWith(".html")||name.endsWith(".htm")||f.type==="text/html")){
+    $("status").textContent="HTMLファイルを選択してください";
+    $("status").className="bad";
+    return;
+  }
+  filename=f.name||"index.html";
   const r=new FileReader();
-  r.onload=()=>{original=String(r.result||"");$("fileInfo").textContent=filename+" / "+new Blob([original]).size.toLocaleString()+" bytes";show()};
-  r.onerror=()=>{$("status").textContent="ファイルを読み込めませんでした";$("status").className="bad"};
+  r.onload=()=>{
+    original=String(r.result||"");
+    $("fileInfo").textContent=filename+" / "+new Blob([original]).size.toLocaleString()+" bytes";
+    show();
+  };
+  r.onerror=()=>{
+    $("status").textContent="ファイルを読み込めませんでした";
+    $("status").className="bad";
+  };
   r.readAsText(f);
+}
+$("file").addEventListener("change",e=>loadHTMLFile(e.target.files&&e.target.files[0]));
+
+const dz=$("dropzone");
+["dragenter","dragover"].forEach(type=>dz.addEventListener(type,e=>{
+  e.preventDefault();e.stopPropagation();dz.classList.add("dragover");
+}));
+["dragleave","drop"].forEach(type=>dz.addEventListener(type,e=>{
+  e.preventDefault();e.stopPropagation();dz.classList.remove("dragover");
+}));
+dz.addEventListener("drop",e=>{
+  const files=e.dataTransfer&&e.dataTransfer.files;
+  if(files&&files.length)loadHTMLFile(files[0]);
 });
+dz.addEventListener("click",()=>$("file").click());
 ["compressImages","maxImageSize","imageQuality","comments","spaces","light","ga4"].forEach(id=>$(id).addEventListener("change",()=>{if(original)show()}));
 $("export").addEventListener("click",async()=>{
   lastResult=await process();
