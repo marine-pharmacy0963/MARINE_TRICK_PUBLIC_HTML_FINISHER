@@ -58,13 +58,19 @@ input[type=checkbox]{width:20px;height:20px;vertical-align:middle}select{width:1
 </div>
 
 <div class="box">
-  <b>③ 解析結果</b>
+  <b>③ Google Analytics（GA4）</b>
+  <label class="check"><input id="ga4" type="checkbox" checked> GA4計測タグを公開HTMLへ自動追加</label>
+  <div class="small">測定ID：<b>G-L8LQXLSZYC</b><br>MASTER本体は変更しません。すでに同じ測定IDのGA4タグが入っているHTMLには重複追加しません。</div>
+</div>
+
+<div class="box">
+  <b>④ 解析結果</b>
   <div id="status" class="small">ファイルを選択すると解析します。</div>
   <pre id="report">待機中</pre>
 </div>
 
 <div class="box">
-  <b>④ 公開版を書き出す</b><br>
+  <b>⑤ 公開版を書き出す</b><br>
   <button id="export" disabled>安全版 index.html を書き出す</button>
   <div class="small">危険な構造やJavaScript構文エラーを検出した場合は書き出しを停止します。</div>
 </div>
@@ -174,6 +180,32 @@ function lightJS(doc){
 function serialize(doc,hadDoctype){
   return (hadDoctype?"<!doctype html>":"")+doc.documentElement.outerHTML;
 }
+const GA4_ID="G-L8LQXLSZYC";
+
+function ensureGA4(doc){
+  if(!$("ga4").checked)return {added:false,existing:false};
+  const already=[...doc.scripts].some(s=>
+    (s.src||"").includes("googletagmanager.com/gtag/js?id="+GA4_ID) ||
+    (s.textContent||"").includes("gtag('config', '"+GA4_ID+"')") ||
+    (s.textContent||"").includes('gtag("config", "'+GA4_ID+'")')
+  );
+  if(already)return {added:false,existing:true};
+
+  const loader=doc.createElement("script");
+  loader.async=true;
+  loader.src="https://www.googletagmanager.com/gtag/js?id="+GA4_ID;
+
+  const config=doc.createElement("script");
+  config.textContent=`window.dataLayer=window.dataLayer||[];
+function gtag(){dataLayer.push(arguments);}
+gtag('js',new Date());
+gtag('config','${GA4_ID}');`;
+
+  doc.head.appendChild(loader);
+  doc.head.appendChild(config);
+  return {added:true,existing:false};
+}
+
 async function process(){
   if(!original)return null;
   const firstDoc=parseHTML(original);
@@ -183,12 +215,13 @@ async function process(){
   const imgResult=await compressEmbeddedImages(h);
   h=imgResult.html;
   let d=parseHTML(h);
+  const ga4Result=ensureGA4(d);
   lightJS(d);
   h=serialize(d,/<!doctype\s+html/i.test(original));
   const finalDoc=parseHTML(h);
   const final=scan(h,finalDoc);
   if(final.danger.length)return {ok:false,report:final};
-  return {ok:true,html:h,report:final,before:new Blob([original]).size,after:new Blob([h]).size,imageCompression:imgResult};
+  return {ok:true,html:h,report:final,before:new Blob([original]).size,after:new Blob([h]).size,imageCompression:imgResult,ga4:ga4Result};
 }
 async function show(){
   lastResult=await process();
@@ -201,6 +234,11 @@ async function show(){
     lines.push("✅ HTML再解析チェック通過");
     lines.push("✅ MASTER本体は加工対象外");
     lines.push("✅ ディープリンク処理は追加・削除しない");
+    if($("ga4").checked&&lastResult.ga4){
+      lines.push(lastResult.ga4.existing?"✅ GA4: 既存タグを確認（重複追加なし）":"✅ GA4: G-L8LQXLSZYC を自動追加");
+    }else{
+      lines.push("ℹ️ GA4: 追加OFF");
+    }
     if(lastResult.imageCompression){const z=lastResult.imageCompression;if($("compressImages").checked)lines.push("✅ 埋め込み画像圧縮: "+z.count+"件"+(z.failed?" / 失敗 "+z.failed+"件":""));}\n    if(lastResult.before!=null)lines.push("サイズ: "+lastResult.before.toLocaleString()+" → "+lastResult.after.toLocaleString()+" bytes");
   }
   if(r.notes.length){lines.push("");lines.push("確認メモ:");r.notes.forEach(x=>lines.push("・"+x))}
@@ -217,7 +255,7 @@ $("file").addEventListener("change",e=>{
   r.onerror=()=>{$("status").textContent="ファイルを読み込めませんでした";$("status").className="bad"};
   r.readAsText(f);
 });
-["compressImages","maxImageSize","imageQuality","comments","spaces","light"].forEach(id=>$(id).addEventListener("change",()=>{if(original)show()}));
+["compressImages","maxImageSize","imageQuality","comments","spaces","light","ga4"].forEach(id=>$(id).addEventListener("change",()=>{if(original)show()}));
 $("export").addEventListener("click",async()=>{
   lastResult=await process();
   if(!lastResult||!lastResult.ok)return show();
